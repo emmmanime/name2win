@@ -1,0 +1,11 @@
+*.exe
+*.dll
+*.pdb
+bin/
+obj/
+.DS_Store
+Thumbs.db
+desktop.ini
+/test_data/
+*.zip
+*.log
