@@ -11,7 +11,7 @@ namespace NameToWin
     class Program
     {
         const string AppName = "name2win";
-        const string AppVersion = "1.4.1";
+        const string AppVersion = "1.4.2";
 
         static bool recursive = false;
         static bool dryRun = false;
@@ -157,6 +157,8 @@ namespace NameToWin
                 .Replace("\u200C", "")  // ZERO WIDTH NON-JOINER
                 .Replace("\u200D", "")  // ZERO WIDTH JOINER
                 .Replace("\uFEFF", "")  // BOM
+                .Replace("\uFE0E", "")  // VARIATION SELECTOR-15
+                .Replace("\uFE0F", "")  // VARIATION SELECTOR-16
                                         // カーリークォート -> シングルクォート
                 .Replace('\u2018', '\'')
                 .Replace('\u2019', '\'')
