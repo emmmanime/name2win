@@ -11,7 +11,7 @@ namespace NameToWin
     class Program
     {
         const string AppName = "name2win";
-        const string AppVersion = "1.4.2";
+        const string AppVersion = "1.4.3";
 
         static bool recursive = false;
         static bool dryRun = false;
@@ -123,6 +123,71 @@ namespace NameToWin
         // ====================================================================
         // クレンジングパイプライン（Shift_JIS & Windows完全適合）
         // ====================================================================
+        static void PrintDiff(string oldStr, string newStr)
+        {
+            int m = oldStr.Length;
+            int n = newStr.Length;
+            int[,] dp = new int[m + 1, n + 1];
+
+            for (int i = 1; i <= m; i++)
+            {
+                for (int j = 1; j <= n; j++)
+                {
+                    if (oldStr[i - 1] == newStr[j - 1])
+                        dp[i, j] = dp[i - 1, j - 1] + 1;
+                    else
+                        dp[i, j] = Math.Max(dp[i - 1, j], dp[i, j - 1]);
+                }
+            }
+
+            int currI = m, currJ = n;
+            List<char> oChars = new List<char>();
+            List<bool> oDiff = new List<bool>();
+            List<char> nChars = new List<char>();
+            List<bool> nDiff = new List<bool>();
+
+            while (currI > 0 || currJ > 0)
+            {
+                if (currI > 0 && currJ > 0 && oldStr[currI - 1] == newStr[currJ - 1])
+                {
+                    oChars.Add(oldStr[currI - 1]); oDiff.Add(false);
+                    nChars.Add(newStr[currJ - 1]); nDiff.Add(false);
+                    currI--; currJ--;
+                }
+                else if (currJ > 0 && (currI == 0 || dp[currI, currJ - 1] >= dp[currI - 1, currJ]))
+                {
+                    nChars.Add(newStr[currJ - 1]); nDiff.Add(true);
+                    currJ--;
+                }
+                else
+                {
+                    oChars.Add(oldStr[currI - 1]); oDiff.Add(true);
+                    currI--;
+                }
+            }
+
+            oChars.Reverse(); oDiff.Reverse();
+            nChars.Reverse(); nDiff.Reverse();
+
+            for (int i = 0; i < oChars.Count; i++)
+            {
+                if (oDiff[i]) Console.ForegroundColor = ConsoleColor.Red;
+                else Console.ResetColor();
+                Console.Write(oChars[i]);
+            }
+            Console.ResetColor();
+            Console.Write(" -> ");
+
+            for (int i = 0; i < nChars.Count; i++)
+            {
+                if (nDiff[i]) Console.ForegroundColor = ConsoleColor.Yellow;
+                else Console.ResetColor();
+                Console.Write(nChars[i]);
+            }
+            Console.ResetColor();
+            Console.WriteLine();
+        }
+
         public static string CleanNameToWindows(string name)
         {
             if (string.IsNullOrEmpty(name)) return name;
@@ -377,7 +442,7 @@ namespace NameToWin
             Console.ForegroundColor = ConsoleColor.Cyan;
             Console.Write("[FILE] ");
             Console.ResetColor();
-            Console.WriteLine(string.Format("{0} -> {1}", fileName, winName));
+            PrintDiff(fileName, winName);
 
             if (!dryRun)
             {
@@ -568,7 +633,7 @@ namespace NameToWin
             Console.ForegroundColor = ConsoleColor.Magenta;
             Console.Write("[DIR]  ");
             Console.ResetColor();
-            Console.WriteLine(string.Format("{0} -> {1}", dirName, winDirName));
+            PrintDiff(dirName, winDirName);
 
             if (!dryRun)
             {
