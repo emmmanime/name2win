@@ -11,7 +11,7 @@ namespace NameToWin
     class Program
     {
         const string AppName = "name2win";
-        const string AppVersion = "1.4.3";
+        const string AppVersion = "1.5.0";
 
         static bool recursive = false;
         static bool dryRun = false;
@@ -23,12 +23,17 @@ namespace NameToWin
         static int filesSkipped = 0;
         static int dirsRenamed = 0;
 
+        // 外部マッピング対応表 (変換元, 変換先)
+        static List<KeyValuePair<string, string>> customMappings = new List<KeyValuePair<string, string>>();
+        static string loadedMappingFilePath = null;
+
         // Shift_JIS (CP932)
         static readonly Encoding ShiftJis = Encoding.GetEncoding(932);
 
         static void Main(string[] args)
         {
             Console.OutputEncoding = Encoding.UTF8;
+            LoadCustomMappings();
 
             // 引数なし起動時はヘルプと使用方法を表示して終了
             if (args.Length == 0)
@@ -93,6 +98,10 @@ namespace NameToWin
             Console.WriteLine(string.Format("再帰処理 (-r)  : {0}", recursive ? "有効" : "無効"));
             Console.WriteLine(string.Format("強制自動 (-f)  : {0}", forceMode ? "有効 (対話なし・自動解決)" : "無効 (衝突時に対話確認)"));
             Console.WriteLine(string.Format("テスト実行 (-t): {0}", dryRun ? "有効 (変更は適用されません)" : "無効 (実行)"));
+            if (!string.IsNullOrEmpty(loadedMappingFilePath))
+            {
+                Console.WriteLine(string.Format("外部対応表     : 有効 ({0} - {1} 件のルール)", Path.GetFileName(loadedMappingFilePath), customMappings.Count));
+            }
             Console.WriteLine("--------------------------------------------------");
 
             try
@@ -188,12 +197,100 @@ namespace NameToWin
             Console.WriteLine();
         }
 
+        static void LoadCustomMappings()
+        {
+            try
+            {
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory ?? "";
+                string currentDir = Environment.CurrentDirectory ?? "";
+
+                string[] candidateFiles = new string[]
+                {
+                    Path.Combine(currentDir, "name2win.mapping.txt"),
+                    Path.Combine(currentDir, "name2win.mapping.tsv"),
+                    Path.Combine(baseDir, "name2win.mapping.txt"),
+                    Path.Combine(baseDir, "name2win.mapping.tsv")
+                };
+
+                string targetFile = null;
+                for (int i = 0; i < candidateFiles.Length; i++)
+                {
+                    if (File.Exists(candidateFiles[i]))
+                    {
+                        targetFile = candidateFiles[i];
+                        break;
+                    }
+                }
+
+                if (targetFile == null) return;
+
+                string[] lines = File.ReadAllLines(targetFile, Encoding.UTF8);
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    string rawLine = lines[i];
+                    string trimmed = rawLine.Trim();
+                    if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#") || trimmed.StartsWith("//"))
+                        continue;
+
+                    string from = null;
+                    string to = "";
+
+                    if (rawLine.Contains("\t"))
+                    {
+                        string[] parts = rawLine.Split(new char[] { '\t' }, 2);
+                        from = parts[0].Trim();
+                        to = parts.Length > 1 ? parts[1].Trim() : "";
+                    }
+                    else if (rawLine.Contains("="))
+                    {
+                        string[] parts = rawLine.Split(new char[] { '=' }, 2);
+                        from = parts[0].Trim();
+                        to = parts.Length > 1 ? parts[1].Trim() : "";
+                    }
+                    else if (rawLine.Contains(","))
+                    {
+                        string[] parts = rawLine.Split(new char[] { ',' }, 2);
+                        from = parts[0].Trim();
+                        to = parts.Length > 1 ? parts[1].Trim() : "";
+                    }
+
+                    if (!string.IsNullOrEmpty(from))
+                    {
+                        customMappings.Add(new KeyValuePair<string, string>(from, to));
+                    }
+                }
+
+                // 長い文字列を先に置換するため、Keyの長さ降順でソート（部分一致誤爆の防止）
+                customMappings.Sort(delegate(KeyValuePair<string, string> a, KeyValuePair<string, string> b)
+                {
+                    return b.Key.Length.CompareTo(a.Key.Length);
+                });
+
+                loadedMappingFilePath = targetFile;
+            }
+            catch (Exception ex)
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine(string.Format("警告: 外部対応表の読み込み中にエラーが発生しました: {0}", ex.Message));
+                Console.ResetColor();
+            }
+        }
+
         public static string CleanNameToWindows(string name)
         {
             if (string.IsNullOrEmpty(name)) return name;
 
             // Step 1: Unicode NFC正規化（濁点・半濁点の結合）
             string s = name.Normalize(NormalizationForm.FormC);
+
+            // Step 1.5: 外部対応表の適用（最優先・1文字対複数文字も完全対応）
+            if (customMappings != null && customMappings.Count > 0)
+            {
+                for (int m = 0; m < customMappings.Count; m++)
+                {
+                    s = s.Replace(customMappings[m].Key, customMappings[m].Value);
+                }
+            }
 
             // Step 2: ダイアクリティカルマークの除去（pokémon -> pokemon 等、濁点・半濁点は完全保護）
             s = StripDiacritics(s);
@@ -230,8 +327,23 @@ namespace NameToWin
                 .Replace('\u201A', '\'')
                 .Replace('\u201B', '\'');
 
-            // Step 6: 記号ファミリー集約（雰囲気救出）
-            s = Regex.Replace(s, @"\u2764\uFE0F?|[\uD83D][\uDC93-\uDC9F]|[\uD83E][\uDE0D-\uDE0F]|\u2661", "♥");
+            // Step 6: 記号ファミリー集約（MangaMeeya・Win32救出）
+            // ハート系絵文字 -> 「♥」へ集約（※明示的な白ハート \u2661 はそのまま残す）
+            s = Regex.Replace(s, @"\u2764\uFE0F?|[\uD83D][\uDC93-\uDC9F]|[\uD83E][\uDD70\uDE0D-\uDE0F\uDFE1]|[\uD83E][\uDE75-\uDE77]", "♥");
+
+            // 三角系絵文字 -> 「▲」「▼」へ（Shift_JIS: 0x81A3, 0x81A5）
+            s = Regex.Replace(s, @"[\uD83D]\uDD3A", "▲"); // 🔺
+            s = Regex.Replace(s, @"[\uD83D]\uDD3B", "▼"); // 🔻
+
+            // ダイヤ系絵文字 -> 「◆」「◇」へ（Shift_JIS: 0x819F, 0x819E）
+            s = Regex.Replace(s, @"[\uD83D][\uDD36\uDD37]", "◆"); // 🔶 🔷
+            s = Regex.Replace(s, @"[\uD83D][\uDD38\uDD39]", "◇"); // 🔸 🔹
+
+            // 丸系絵文字 -> 「●」「○」へ（Shift_JIS: 0x819C, 0x819B）
+            s = Regex.Replace(s, @"\u26AB|[\uD83D][\uDD34\uDD35]|[\uD83E][\uDFE0-\uDFE4]", "●"); // 🔴 🔵 ⚫ カラー丸
+            s = Regex.Replace(s, @"\u26AA", "○"); // ⚪
+
+            // 星系・音符系 -> 「★」「♪」へ
             s = Regex.Replace(s, @"\u2B50|\u2728|[\uD83C][\uDF1F\uDF20]|[\uD83D][\uDCAB]|\u2606", "★");
             s = Regex.Replace(s, @"[\uD83C][\uDFB5\uDFB6\uDFBC]|\u266B", "♪");
 
@@ -261,6 +373,13 @@ namespace NameToWin
 
                 char c = s[i];
                 if (c < 32) continue; // 制御文字はスキップ
+
+                // ★ホワイトリスト救済：Shift_JIS外だがMangaMeeya等の古のWin32アプリで安全に表示・オープン可能なBMP記号
+                if (c == '♥' || c == '♡' || c == '♬' || c == '♠' || c == '♤' || c == '♣' || c == '♧' || c == '✓' || c == '✔')
+                {
+                    sb.Append(c);
+                    continue;
+                }
 
                 // Shift_JISで表現可能か往復テスト
                 byte[] bytes = ShiftJis.GetBytes(new char[] { c });
@@ -679,13 +798,18 @@ namespace NameToWin
             Console.WriteLine();
             Console.WriteLine("クレンジング仕様:");
             Console.WriteLine("  1. Unicode NFC正規化 (濁点・半濁点の1文字結合)");
-            Console.WriteLine("  2. ダイアクリティカルマーク除去 (pokémon -> pokemon 等 ※日本語の濁点は完全保護)");
-            Console.WriteLine("  3. 波ダッシュ是正 (\\u301C -> \\uFF5E 全角チルダ)");
-            Console.WriteLine("  4. 丸数字の標準化 (❶〜❿ -> ①〜⑩, ㉑〜㊿ -> (21)〜(50))");
-            Console.WriteLine("  5. Mac地雷文字の除去 (ダッシュ類->半角ハイフン, 特殊空白->半角空白, 不可視ゴミ消去)");
-            Console.WriteLine("  6. 記号ファミリー集約 (ハート系->♥, 星系->★, 音符系->♪)");
-            Console.WriteLine("  7. Windows禁止文字・パス区切りの安全な全角化 (/ -> ／, \\ -> ＼, : -> ： 等)");
-            Console.WriteLine("  8. Shift_JISフォールバック (サロゲートペア絵文字・未対応文字を単一「■」化)");
+            Console.WriteLine("  2. 外部対応表の適用 (name2win.mapping.txt があれば最優先置換・中国語等にも対応)");
+            Console.WriteLine("  3. ダイアクリティカルマーク除去 (pokémon -> pokemon 等 ※日本語の濁点は完全保護)");
+            Console.WriteLine("  4. 波ダッシュ是正 (\\u301C -> \\uFF5E 全角チルダ)");
+            Console.WriteLine("  5. 丸数字の標準化 (❶〜❿ -> ①〜⑩, ㉑〜㊿ -> (21)〜(50))");
+            Console.WriteLine("  6. Mac地雷文字の除去 (ダッシュ類->半角ハイフン, 特殊空白->半角空白, 不可視ゴミ消去)");
+            Console.WriteLine("  7. 記号ファミリー集約 (ハート->♥, 三角->▲▼, ダイヤ->◆◇, 丸->●○, 星->★, 音符->♪)");
+            Console.WriteLine("  8. Windows禁止文字・パス区切りの安全な全角化 (/ -> ／, \\ -> ＼, : -> ： 等)");
+            Console.WriteLine("  9. Shift_JIS・MangaMeeya救出 (♥, ♡, ♬ 等の安全記号は保護、未対応絵文字のみ単一「■」化)");
+            Console.WriteLine();
+            Console.WriteLine("外部対応表 (name2win.mapping.txt):");
+            Console.WriteLine("  exeと同じ場所または実行フォルダーに対応表ファイルを置くことで、自由な置換が可能です。");
+            Console.WriteLine("  書式: 変換元[Tabまたは=または,]変換先 (例: 酱=ちゃん / 💛=♡ / 🍳=料理)");
             Console.WriteLine();
             Console.WriteLine("使用例:");
             Console.WriteLine("  name2win.exe \"sample.zip\"                   (単一ファイル)");
