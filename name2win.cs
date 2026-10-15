@@ -11,7 +11,7 @@ namespace NameToWin
     class Program
     {
         const string AppName = "name2win";
-        const string AppVersion = "1.5.2";
+        const string AppVersion = "1.5.3";
 
         static bool recursive = false;
         static bool dryRun = false;
@@ -328,8 +328,11 @@ namespace NameToWin
                 .Replace('\u201B', '\'');
 
             // Step 6: 記号ファミリー集約（MangaMeeya・Win32救出）
-            // ハート系絵文字 -> 「♥」へ集約（※明示的な白ハート \u2661 もホワイトリストで残す）
-            s = Regex.Replace(s, @"\u2764\uFE0F?|[\uD83D][\uDC93-\uDC9F]|[\uD83E][\uDD70\uDE0D-\uDE0F\uDFE1]|[\uD83E][\uDE75-\uDE77]", "♥");
+            // ハート系絵文字 および Unicode黒ハート(\u2665) -> Shift_JIS外字黒ハート「\uE0A5」(0xF0E6)へ集約
+            s = Regex.Replace(s, @"\u2665|\u2764\uFE0F?|[\uD83D][\uDC93-\uDC9F]|[\uD83E][\uDD70\uDE0D-\uDE0F\uDFE1]|[\uD83E][\uDE75-\uDE77]", "\uE0A5");
+
+            // Unicode白ハート(\u2661) -> Shift_JIS外字白ハート「\uE006」(0xF046)へ変換
+            s = s.Replace("\u2661", "\uE006");
 
             // 三角系絵文字 -> 「▲」「▼」へ（Shift_JIS: 0x81A3, 0x81A5）
             s = Regex.Replace(s, @"[\uD83D]\uDD3A", "▲"); // 🔺
@@ -374,8 +377,8 @@ namespace NameToWin
                 char c = s[i];
                 if (c < 32) continue; // 制御文字はスキップ
 
-                // ★ホワイトリスト救済：Shift_JIS外だがMangaMeeya等の古のWin32アプリで安全に表示・オープン可能なBMP記号
-                if (c == '♥' || c == '♡' || c == '♬' || c == '♠' || c == '♤' || c == '♣' || c == '♧' || c == '✓' || c == '✔')
+                // ★ホワイトリスト救済：Shift_JIS外だが古のWin32アプリで安全に表示・オープン可能なBMP記号
+                if (c == '♬' || c == '♠' || c == '♤' || c == '♣' || c == '♧' || c == '✓' || c == '✔')
                 {
                     sb.Append(c);
                     continue;
@@ -803,13 +806,13 @@ namespace NameToWin
             Console.WriteLine("  4. 波ダッシュ是正 (\\u301C -> \\uFF5E 全角チルダ)");
             Console.WriteLine("  5. 丸数字の標準化 (❶〜❿ -> ①〜⑩, ㉑〜㊿ -> (21)〜(50))");
             Console.WriteLine("  6. Mac地雷文字の除去 (ダッシュ類->半角ハイフン, 特殊空白->半角空白, 不可視ゴミ消去)");
-            Console.WriteLine("  7. 記号ファミリー集約 (ハート->♥, 三角->▲▼, ダイヤ->◆◇, 丸->●○, 星->★, 音符->♪)");
+            Console.WriteLine("  7. 記号ファミリー集約 (ハート絵文字・♥->外字黒ハート, ♡->外字白ハート, 三角->▲▼, ダイヤ->◆◇, 丸->●○, 星->★, 音符->♪)");
             Console.WriteLine("  8. Windows禁止文字・パス区切りの安全な全角化 (/ -> ／, \\ -> ＼, : -> ： 等)");
-            Console.WriteLine("  9. Shift_JIS・MangaMeeya救出 (♥, ♡, ♬ 等の安全記号は保護、未対応絵文字のみ単一「■」化)");
+            Console.WriteLine("  9. Shift_JIS・MangaMeeya救出 (MangaMeeya対応のShift_JIS外字ハート[F0E6/F046]や安全記号は保護、未対応絵文字のみ単一「■」化)");
             Console.WriteLine();
             Console.WriteLine("外部対応表 (name2win.mapping.txt):");
             Console.WriteLine("  exeと同じ場所または実行フォルダーに対応表ファイルを置くことで、自由な置換が可能です。");
-            Console.WriteLine("  書式: 変換元[Tabまたは=または,]変換先 (例: 酱=ちゃん / 💛=♡ / 🍳=料理)");
+            Console.WriteLine("  書式: 変換元[Tabまたは=または,]変換先 (例: 酱=ちゃん / 💛=\uE006 / 🍳=料理)");
             Console.WriteLine();
             Console.WriteLine("使用例:");
             Console.WriteLine("  name2win.exe \"sample.zip\"                   (単一ファイル)");
