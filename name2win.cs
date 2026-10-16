@@ -11,7 +11,7 @@ namespace NameToWin
     class Program
     {
         const string AppName = "name2win";
-        const string AppVersion = "2.0.0";
+        const string AppVersion = "2.1.0";
 
         static bool recursive = false;
         static bool dryRun = false;
