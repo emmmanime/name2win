@@ -11,7 +11,7 @@ namespace NameToWin
     class Program
     {
         const string AppName = "name2win";
-        const string AppVersion = "2.1.0";
+        const string AppVersion = "2.2.0";
 
         static bool recursive = false;
         static bool dryRun = false;
@@ -330,20 +330,21 @@ namespace NameToWin
 
             // Step 5: macOS特有の自動変換・全半角ダッシュ・ハイフン・地雷文字の完全標準化
             s = s
-                // あらゆるUnicodeハイフン・ダッシュ・マイナス類 (全13種) -> 半角ハイフン '-' (0x2D)
-                .Replace('\u2010', '-') // HYPHEN (‐)
-                .Replace('\u2011', '-') // NON-BREAKING HYPHEN (‑) ※CP932非対応
-                .Replace('\u2012', '-') // FIGURE DASH (‒) ※CP932非対応
-                .Replace('\u2013', '-') // EN DASH (–) ※CP932非対応
-                .Replace('\u2014', '-') // EM DASH (—) ※CP932非対応 (macOS全角ダッシュ)
-                .Replace('\u2015', '-') // HORIZONTAL BAR (―)
-                .Replace('\u2212', '-') // MINUS SIGN (−) ※CP932非対応 (macOS全角マイナス)
-                .Replace('\u2043', '-') // HYPHEN BULLET (⁃) ※CP932非対応
-                .Replace('\uFE58', '-') // SMALL EM DASH (﹘) ※CP932非対応
-                .Replace('\uFE63', '-') // SMALL HYPHEN-MINUS (﹣) ※CP932非対応
-                .Replace('\u2E3A', '-') // TWO-EM DASH (⸺) ※CP932非対応
-                .Replace('\u2E3B', '-') // THREE-EM DASH (⸻) ※CP932非対応
-                .Replace('\u30A0', '-') // KATAKANA-HIRAGANA DOUBLE HYPHEN (゠) ※CP932非対応
+                // 全角系ハイフン・ダッシュ・マイナス類 (9種) -> Windows全角ハイフンマイナス '－' (\uFF0D / CP932: 0x817C)
+                .Replace('\u2010', '\uFF0D') // HYPHEN (‐ : JIS全角ハイフン)
+                .Replace('\u2014', '\uFF0D') // EM DASH (— : macOS全角ダッシュ ※CP932非対応)
+                .Replace('\u2015', '\uFF0D') // HORIZONTAL BAR (― : 全角ダッシュ)
+                .Replace('\u2212', '\uFF0D') // MINUS SIGN (− : macOS全角マイナス ※CP932非対応)
+                .Replace('\uFE58', '\uFF0D') // SMALL EM DASH (﹘ : CJK全角互換ダッシュ ※CP932非対応)
+                .Replace('\uFE63', '\uFF0D') // SMALL HYPHEN-MINUS (﹣ : CJK全角互換ハイフンマイナス ※CP932非対応)
+                .Replace('\u2E3A', '\uFF0D') // TWO-EM DASH (⸺ : 2倍ダッシュ ※CP932非対応)
+                .Replace('\u2E3B', '\uFF0D') // THREE-EM DASH (⸻ : 3倍ダッシュ ※CP932非対応)
+                .Replace('\u30A0', '\uFF0D') // KATAKANA-HIRAGANA DOUBLE HYPHEN (゠ : 全角ダブルハイフン ※CP932非対応)
+                // 半角・欧文系ハイフン・ダッシュ類 (4種) -> 半角ハイフン '-' (\u002D / CP932: 0x2D)
+                .Replace('\u2011', '-')      // NON-BREAKING HYPHEN (‑ : 欧文改行禁止ハイフン ※CP932非対応)
+                .Replace('\u2012', '-')      // FIGURE DASH (‒ : 欧文数字用ダッシュ ※CP932非対応)
+                .Replace('\u2013', '-')      // EN DASH (– : 欧文ENダッシュ ※CP932非対応)
+                .Replace('\u2043', '-')      // HYPHEN BULLET (⁃ ※CP932非対応)
                                         // 特殊スペース -> 半角空白 ' '
                 .Replace('\u00A0', ' ') // NO-BREAK SPACE
                 .Replace('\u2002', ' ') // EN SPACE
