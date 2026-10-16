@@ -307,22 +307,43 @@ namespace NameToWin
                 }
             }
 
-            // Step 2: ダイアクリティカルマークの除去（pokémon -> pokemon 等、濁点・半濁点は完全保護）
+            // Step 2: 西欧ダイアクリティカルマーク除去 & 特殊ラテン文字展開 (pokémon -> pokemon, ß -> ss, æ -> ae, ø -> o 等 ※日本語の濁点・半濁点は完全保護)
             s = StripDiacritics(s);
 
-            // Step 3: 波ダッシュ問題是正（\u301C -> \uFF5E 全角チルダへ）
-            s = s.Replace('\u301C', '\uFF5E');
+            // Step 2.5: macOS / PDF由来の康熙部首 (U+2F00-U+2FD5) ・ CJK部首補助 (U+2E80-U+2EFF) を標準JIS漢字へ正規化救出 (⼀ -> 一 等)
+            s = Regex.Replace(s, @"[\u2E80-\u2FD5]", delegate(Match m)
+            {
+                return m.Value.Normalize(NormalizationForm.FormKC);
+            });
+
+            // Step 3: 波ダッシュ・JIS/CP932マッピング不一致記号の是正
+            s = s
+                .Replace('\u301C', '\uFF5E') // 〜 (WAVE DASH) -> ～ (全角チルダ 0x8160)
+                .Replace('\u3030', '\uFF5E') // 〰 (WAVY DASH) -> ～ (全角チルダ 0x8160)
+                .Replace('\u2016', '\u2225') // ‖ -> ∥ (双柱 0x8161)
+                .Replace('\u00A2', '\uFFE0') // ¢ -> ￠ (セント 0x8191)
+                .Replace('\u00A3', '\uFFE1') // £ -> ￡ (ポンド 0x8192)
+                .Replace('\u00AC', '\uFFE2'); // ¬ -> ￢ (ノット 0x81CA)
 
             // Step 4: 丸数字の置換・展開（黒丸数字->白丸数字 / 21以降は(21)等へ展開）
             s = NormalizeCircledNumbers(s);
 
-            // Step 5: macOS特有の自動変換・地雷文字の標準化
+            // Step 5: macOS特有の自動変換・全半角ダッシュ・ハイフン・地雷文字の完全標準化
             s = s
-                // ダッシュ・ハイフン類 -> 半角ハイフン '-'
-                .Replace('\u2013', '-') // EN DASH
-                .Replace('\u2014', '-') // EM DASH
-                .Replace('\u2015', '-') // HORIZONTAL BAR
-                .Replace('\u2212', '-') // MINUS SIGN
+                // あらゆるUnicodeハイフン・ダッシュ・マイナス類 (全13種) -> 半角ハイフン '-' (0x2D)
+                .Replace('\u2010', '-') // HYPHEN (‐)
+                .Replace('\u2011', '-') // NON-BREAKING HYPHEN (‑) ※CP932非対応
+                .Replace('\u2012', '-') // FIGURE DASH (‒) ※CP932非対応
+                .Replace('\u2013', '-') // EN DASH (–) ※CP932非対応
+                .Replace('\u2014', '-') // EM DASH (—) ※CP932非対応 (macOS全角ダッシュ)
+                .Replace('\u2015', '-') // HORIZONTAL BAR (―)
+                .Replace('\u2212', '-') // MINUS SIGN (−) ※CP932非対応 (macOS全角マイナス)
+                .Replace('\u2043', '-') // HYPHEN BULLET (⁃) ※CP932非対応
+                .Replace('\uFE58', '-') // SMALL EM DASH (﹘) ※CP932非対応
+                .Replace('\uFE63', '-') // SMALL HYPHEN-MINUS (﹣) ※CP932非対応
+                .Replace('\u2E3A', '-') // TWO-EM DASH (⸺) ※CP932非対応
+                .Replace('\u2E3B', '-') // THREE-EM DASH (⸻) ※CP932非対応
+                .Replace('\u30A0', '-') // KATAKANA-HIRAGANA DOUBLE HYPHEN (゠) ※CP932非対応
                                         // 特殊スペース -> 半角空白 ' '
                 .Replace('\u00A0', ' ') // NO-BREAK SPACE
                 .Replace('\u2002', ' ') // EN SPACE
@@ -330,6 +351,7 @@ namespace NameToWin
                 .Replace('\u2009', ' ') // THIN SPACE
                 .Replace('\u202F', ' ') // NARROW NO-BREAK SPACE
                                         // 不可視文字・ゴミ -> 削除
+                .Replace("\u00AD", "")  // SOFT HYPHEN (不可視の改行ハイフン)
                 .Replace("\u200B", "")  // ZERO WIDTH SPACE
                 .Replace("\u200C", "")  // ZERO WIDTH NON-JOINER
                 .Replace("\u200D", "")  // ZERO WIDTH JOINER
@@ -423,7 +445,27 @@ namespace NameToWin
         static string StripDiacritics(string text)
         {
             if (string.IsNullOrEmpty(text)) return text;
-            string normalized = text.Normalize(NormalizationForm.FormD);
+
+            // NFDで分解されない西欧特殊ラテン文字・合字をASCII英字へ展開
+            string pre = text
+                .Replace("\u00DF", "ss") // ß (ドイツ語エスツェット)
+                .Replace("\u1E9E", "SS") // ẞ (大文字エスツェット)
+                .Replace("\u00C6", "AE") // Æ
+                .Replace("\u00E6", "ae") // æ
+                .Replace("\u0152", "OE") // Œ
+                .Replace("\u0153", "oe") // œ
+                .Replace("\u00D8", "O")  // Ø (北欧ストローク付きO)
+                .Replace("\u00F8", "o")  // ø
+                .Replace("\u0141", "L")  // Ł (ポーランド語ストローク付きL)
+                .Replace("\u0142", "l")  // ł
+                .Replace("\u0110", "D")  // Đ (ストローク付きD)
+                .Replace("\u0111", "d")  // đ
+                .Replace("\u00D0", "D")  // Ð (アイスランド語エズ)
+                .Replace("\u00F0", "d")  // ð
+                .Replace("\u00DE", "TH") // Þ (アイスランド語ソーン)
+                .Replace("\u00FE", "th"); // þ
+
+            string normalized = pre.Normalize(NormalizationForm.FormD);
             StringBuilder sb = new StringBuilder();
             for (int i = 0; i < normalized.Length; i++)
             {
