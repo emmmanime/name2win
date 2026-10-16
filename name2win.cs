@@ -11,11 +11,12 @@ namespace NameToWin
     class Program
     {
         const string AppName = "name2win";
-        const string AppVersion = "1.5.4";
+        const string AppVersion = "2.0.0";
 
         static bool recursive = false;
         static bool dryRun = false;
         static bool forceMode = false;
+        static bool checkMode = false;
         static bool applyAll = false;
 
         static int filesRenamed = 0;
@@ -64,6 +65,11 @@ namespace NameToWin
                 {
                     forceMode = true;
                 }
+                else if (arg.Equals("-c", StringComparison.OrdinalIgnoreCase) ||
+                         arg.Equals("--check", StringComparison.OrdinalIgnoreCase))
+                {
+                    checkMode = true;
+                }
                 else if (arg.Equals("-v", StringComparison.OrdinalIgnoreCase) ||
                          arg.Equals("--version", StringComparison.OrdinalIgnoreCase))
                 {
@@ -86,9 +92,18 @@ namespace NameToWin
             if (targets.Count == 0)
             {
                 Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("エラー: 対象のファイル、フォルダー、またはパターンが指定されていません。");
+                Console.WriteLine("エラー: 対象のファイル、フォルダー、または文字列が指定されていません。");
                 Console.ResetColor();
                 ShowHelp();
+                return;
+            }
+
+            if (checkMode)
+            {
+                foreach (string target in targets)
+                {
+                    RunCheckDiagnostic(target);
+                }
                 return;
             }
 
@@ -327,16 +342,28 @@ namespace NameToWin
                 .Replace('\u201A', '\'')
                 .Replace('\u201B', '\'');
 
-            // Step 6: 記号ファミリー集約（MangaMeeya・Win32救出）
+            // Step 6: かな・記号ファミリー集約（MangaMeeya・Win32救出：変換先はすべて純粋なCP932文字のみ）
+            // CP932非対応のひらがな・カタカナ（ゔ, ゕ, ゖ, ヷ, ヸ, ヹ, ヺ）をCP932対応カナへ救出
+            s = s
+                .Replace("\u3094", "ヴ")   // ゔ -> ヴ (0x8394)
+                .Replace("\u3095", "ヵ")   // ゕ -> ヵ (0x8395)
+                .Replace("\u3096", "ヶ")   // ゖ -> ヶ (0x8396)
+                .Replace("\u30F7", "ヴァ") // ヷ -> ヴァ
+                .Replace("\u30F8", "ヴィ") // ヸ -> ヴィ
+                .Replace("\u30F9", "ヴェ") // ヹ -> ヴェ
+                .Replace("\u30FA", "ヴォ"); // ヺ -> ヴォ
+
             // ハート系絵文字 および Unicode黒ハート(\u2665) -> Shift_JIS外字黒ハート「\uE0A5」(0xF0E6)へ集約
             s = Regex.Replace(s, @"\u2665|\u2764\uFE0F?|[\uD83D][\uDC93-\uDC9F]|[\uD83E][\uDD70\uDE0D-\uDE0F\uDFE1]|[\uD83E][\uDE75-\uDE77]", "\uE0A5");
 
             // Unicode白ハート(\u2661) -> Shift_JIS外字白ハート「\uE006」(0xF046)へ変換
             s = s.Replace("\u2661", "\uE006");
 
-            // 三角系絵文字 -> 「▲」「▼」へ（Shift_JIS: 0x81A3, 0x81A5）
-            s = Regex.Replace(s, @"[\uD83D]\uDD3A", "▲"); // 🔺
-            s = Regex.Replace(s, @"[\uD83D]\uDD3B", "▼"); // 🔻
+            // 三角系絵文字・右左小三角 -> 「▲」「△」「▼」「▽」へ（Shift_JIS: 0x81A3, 0x81A2, 0x81A5, 0x81A4）
+            s = Regex.Replace(s, @"[\uD83D]\uDD3A|[\u25B4\u25B6\u25B8\u25BA]", "▲"); // 🔺 ▴ ▶ ▸ ►
+            s = Regex.Replace(s, @"[\u25B5\u25B7\u25B9\u25BB]", "△");                // ▵ ▷ ▹ ▻
+            s = Regex.Replace(s, @"[\uD83D]\uDD3B|[\u25BE\u25C0\u25C2\u25C4]", "▼"); // 🔻 ▾ ◀ ◂ ◄
+            s = Regex.Replace(s, @"[\u25BF\u25C1\u25C3\u25C5]", "▽");                // ▿ ◁ ◃ ◅
 
             // ダイヤ系絵文字 -> 「◆」「◇」へ（Shift_JIS: 0x819F, 0x819E）
             s = Regex.Replace(s, @"[\uD83D][\uDD36\uDD37]", "◆"); // 🔶 🔷
@@ -771,6 +798,176 @@ namespace NameToWin
         }
 
         // ====================================================================
+        // 文字コード診断モード (-c / --check)
+        // ====================================================================
+        static void RunCheckDiagnostic(string input)
+        {
+            string sample = input;
+            bool isPath = false;
+            try
+            {
+                if (File.Exists(input) || Directory.Exists(input))
+                {
+                    string fileName = Path.GetFileName(input.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                    if (!string.IsNullOrEmpty(fileName))
+                    {
+                        sample = fileName;
+                        isPath = true;
+                    }
+                }
+            }
+            catch
+            {
+                // パスとして無効な文字（?や*など）を含む文字列リテラルの場合はそのまま診断
+            }
+
+            Console.WriteLine("================================================================================");
+            Console.WriteLine(string.Format("  {0} v{1} - 文字コード・Win32 (CP932/MangaMeeya) 互換性診断", AppName, AppVersion));
+            Console.WriteLine("================================================================================");
+            if (isPath)
+            {
+                Console.WriteLine(string.Format("対象パス  : {0}", input));
+            }
+            Console.WriteLine(string.Format("診断文字列: {0}", sample));
+            Console.WriteLine("--------------------------------------------------------------------------------");
+            Console.WriteLine("No. | 文字 | Unicode         | Shift-JIS   | Win32 (CP932) 判定    | 変換後");
+            Console.WriteLine("----+------+-----------------+-------------+-----------------------+------------");
+
+            int charIndex = 1;
+            int ngCount = 0;
+            string forbidden = "\\/:*?\"<>|";
+
+            for (int i = 0; i < sample.Length; i++)
+            {
+                string unit;
+                string unicodeHex;
+                bool isSurrogate = false;
+
+                if (char.IsHighSurrogate(sample[i]) && i + 1 < sample.Length && char.IsLowSurrogate(sample[i + 1]))
+                {
+                    int codePoint = char.ConvertToUtf32(sample[i], sample[i + 1]);
+                    unit = new string(new char[] { sample[i], sample[i + 1] });
+                    unicodeHex = string.Format("U+{0:X5} (SP)", codePoint);
+                    isSurrogate = true;
+                    i++;
+                }
+                else
+                {
+                    char c = sample[i];
+                    unit = c.ToString();
+                    unicodeHex = string.Format("U+{0:X4}", (int)c);
+                }
+
+                string sjisHex;
+                string statusText;
+                ConsoleColor statusColor;
+
+                if (isSurrogate)
+                {
+                    sjisHex = "---- (3F:?)";
+                    statusText = "NG (サロゲート絵文字)";
+                    statusColor = ConsoleColor.Red;
+                    ngCount++;
+                }
+                else
+                {
+                    char c = unit[0];
+                    byte[] bytes = ShiftJis.GetBytes(new char[] { c });
+                    char[] roundtrip = ShiftJis.GetChars(bytes);
+                    bool validCp932 = (roundtrip.Length == 1 && roundtrip[0] == c);
+
+                    StringBuilder hexSb = new StringBuilder();
+                    for (int b = 0; b < bytes.Length; b++)
+                    {
+                        hexSb.AppendFormat("{0:X2}", bytes[b]);
+                    }
+
+                    if (!validCp932)
+                    {
+                        sjisHex = "---- (3F:?)";
+                        statusText = "NG (CP932非対応)";
+                        statusColor = ConsoleColor.Red;
+                        ngCount++;
+                    }
+                    else if (forbidden.IndexOf(c) >= 0)
+                    {
+                        sjisHex = hexSb.ToString();
+                        statusText = "NG (Win禁止文字)";
+                        statusColor = ConsoleColor.Red;
+                        ngCount++;
+                    }
+                    else if (c < 32)
+                    {
+                        sjisHex = hexSb.ToString();
+                        statusText = "NG (制御文字)";
+                        statusColor = ConsoleColor.Red;
+                        ngCount++;
+                    }
+                    else if (c >= '\uE000' && c <= '\uE757')
+                    {
+                        sjisHex = hexSb.ToString();
+                        statusText = "OK (CP932外字領域)";
+                        statusColor = ConsoleColor.Cyan;
+                    }
+                    else
+                    {
+                        sjisHex = hexSb.ToString();
+                        statusText = "OK (CP932標準)";
+                        statusColor = ConsoleColor.Green;
+                    }
+                }
+
+                string convertedUnit = CleanNameToWindows(unit);
+                if (unit == " " || unit == ".")
+                {
+                    convertedUnit = unit; // 単体診断時は末尾トリムで消えないようそのまま表示
+                }
+
+                Console.Write(string.Format("{0,3} | {1,-4} | {2,-15} | {3,-11} | ", charIndex, unit, unicodeHex, sjisHex));
+                Console.ForegroundColor = statusColor;
+                Console.Write(string.Format("{0,-15}", statusText));
+                Console.ResetColor();
+                Console.Write(" | ");
+                if (convertedUnit != unit)
+                {
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine(string.Format("{0} (変換)", convertedUnit));
+                    Console.ResetColor();
+                }
+                else
+                {
+                    Console.WriteLine(convertedUnit);
+                }
+
+                charIndex++;
+            }
+
+            Console.WriteLine("--------------------------------------------------------------------------------");
+            string sanitizedFull = CleanNameToWindows(sample);
+            Console.Write("クレンジング結果: ");
+            PrintDiff(sample, sanitizedFull);
+            Console.WriteLine();
+
+            if (ngCount == 0 && sample == sanitizedFull)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("総合判定: [OK] すべての文字が CP932 (Shift_JIS) に完全準拠しており、古のWin32アプリでそのまま読み込めます。");
+            }
+            else if (ngCount > 0)
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine(string.Format("総合判定: [要変換] 古のWin32アプリで読み込めない文字が {0} 箇所含まれています（上記クレンジング結果への変換で解決します）。", ngCount));
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine("総合判定: [正規化推奨] CP932で読み込み可能ですが、クレンジング標準化の対象文字が含まれています。");
+            }
+            Console.ResetColor();
+            Console.WriteLine();
+        }
+
+        // ====================================================================
         // ヘルプ・バージョン表示
         // ====================================================================
         static void ShowVersion()
@@ -789,6 +986,7 @@ namespace NameToWin
             Console.WriteLine("  -r, --recursive   フォルダーまたはワイルドカード指定時に再帰処理を行います。");
             Console.WriteLine("  -f, --force       同名衝突時に問い合わせず自動解決（同一＝統合 / 相違＝連番保存）。");
             Console.WriteLine("  -t, --test        テスト実行 (Dry-Run)。実際には変更せずに対象を表示します。");
+            Console.WriteLine("  -c, --check       文字コード診断モード。指定した文字列やファイル名のUnicode/CP932対応状況を1文字ずつ表形式で診断します。");
             Console.WriteLine("  -v, --version     バージョン情報を表示します。");
             Console.WriteLine("  -h, --help        このヘルプを表示します。");
             Console.WriteLine();
@@ -799,7 +997,7 @@ namespace NameToWin
             Console.WriteLine("  4. 波ダッシュ是正 (\\u301C -> \\uFF5E 全角チルダ)");
             Console.WriteLine("  5. 丸数字の標準化 (❶〜❿ -> ①〜⑩, ㉑〜㊿ -> (21)〜(50))");
             Console.WriteLine("  6. Mac地雷文字の除去 (ダッシュ類->半角ハイフン, 特殊空白->半角空白, 不可視ゴミ消去)");
-            Console.WriteLine("  7. 記号ファミリー集約 (ハート絵文字・♥->外字黒ハート, ♡->外字白ハート, 三角->▲▼, ダイヤ->◆◇, 丸->●○, 星->★, 音符・♩♫♬->♪)");
+            Console.WriteLine("  7. かな・記号ファミリー集約 (ゔ->ヴ, ヷ〜ヺ->ヴァ〜ヴォ, ♥->外字黒ハート[F0E6], ♡->外字白ハート[F046], 三角・▶◀->▲△▼▽, ダイヤ->◆◇, 丸->●○, 星->★, 音符・♩♫♬->♪)");
             Console.WriteLine("  8. Windows禁止文字・パス区切りの安全な全角化 (/ -> ／, \\ -> ＼, : -> ： 等)");
             Console.WriteLine("  9. Shift_JIS (CP932) 厳密検証 (CP932外字ハート[F0E6/F046]を含む純粋なCP932文字のみ通過、CP932外の文字・絵文字はすべて単一「■」化)");
             Console.WriteLine();
@@ -809,6 +1007,7 @@ namespace NameToWin
             Console.WriteLine();
             Console.WriteLine("使用例:");
             Console.WriteLine("  name2win.exe \"sample.zip\"                   (単一ファイル)");
+            Console.WriteLine("  name2win.exe -c \"テスト♬♥♡ゔ▶◀.zip\"         (文字列やファイルのCP932互換性を1文字ずつ診断)");
             Console.WriteLine("  name2win.exe -t -r \"C:\\Downloads\\Discord\"   (事前に衝突や変更をテスト確認)");
             Console.WriteLine("  name2win.exe -r \"C:\\Downloads\\Discord\"      (対話モードで確認しながら実行)");
             Console.WriteLine("  name2win.exe -f -r \"C:\\Downloads\\Discord\"   (全自動で安全に一括解決)");
