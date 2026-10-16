@@ -11,7 +11,7 @@ namespace NameToWin
     class Program
     {
         const string AppName = "name2win";
-        const string AppVersion = "1.5.3";
+        const string AppVersion = "1.5.4";
 
         static bool recursive = false;
         static bool dryRun = false;
@@ -346,9 +346,9 @@ namespace NameToWin
             s = Regex.Replace(s, @"\u26AB|[\uD83D][\uDD34\uDD35]|[\uD83E][\uDFE0-\uDFE4]", "●"); // 🔴 🔵 ⚫ カラー丸
             s = Regex.Replace(s, @"\u26AA", "○"); // ⚪
 
-            // 星系・音符系 -> 「★」「♪」へ
+            // 星系・音符系 -> 「★」「♪」へ（Shift_JIS: 0x819A, 0x81F4）
             s = Regex.Replace(s, @"\u2B50|\u2728|[\uD83C][\uDF1F\uDF20]|[\uD83D][\uDCAB]|\u2606", "★");
-            s = Regex.Replace(s, @"[\uD83C][\uDFB5\uDFB6\uDFBC]|\u266B", "♪");
+            s = Regex.Replace(s, @"[\uD83C][\uDFB5\uDFB6\uDFBC]|[\u2669\u266B\u266C]", "♪");
 
             // Step 7: Windows禁止文字・パス区切りの安全な全角化
             s = s
@@ -362,7 +362,7 @@ namespace NameToWin
                 .Replace('>', '＞')
                 .Replace('|', '｜');
 
-            // Step 8: サロゲートペア絵文字の単一「■」化 & Shift_JIS外文字の豆腐化
+            // Step 8: サロゲートペア絵文字の単一「■」化 & Shift_JIS (CP932) 外文字の厳密な豆腐化
             StringBuilder sb = new StringBuilder();
             for (int i = 0; i < s.Length; i++)
             {
@@ -377,14 +377,7 @@ namespace NameToWin
                 char c = s[i];
                 if (c < 32) continue; // 制御文字はスキップ
 
-                // ★ホワイトリスト救済：Shift_JIS外だが古のWin32アプリで安全に表示・オープン可能なBMP記号
-                if (c == '♬' || c == '♠' || c == '♤' || c == '♣' || c == '♧' || c == '✓' || c == '✔')
-                {
-                    sb.Append(c);
-                    continue;
-                }
-
-                // Shift_JISで表現可能か往復テスト
+                // Shift_JIS (CP932) で表現可能か往復テスト（外字 0xF040〜0xF9FC を含む純粋なCP932文字のみ通過）
                 byte[] bytes = ShiftJis.GetBytes(new char[] { c });
                 char[] roundtrip = ShiftJis.GetChars(bytes);
                 if (roundtrip.Length == 1 && roundtrip[0] == c)
@@ -806,9 +799,9 @@ namespace NameToWin
             Console.WriteLine("  4. 波ダッシュ是正 (\\u301C -> \\uFF5E 全角チルダ)");
             Console.WriteLine("  5. 丸数字の標準化 (❶〜❿ -> ①〜⑩, ㉑〜㊿ -> (21)〜(50))");
             Console.WriteLine("  6. Mac地雷文字の除去 (ダッシュ類->半角ハイフン, 特殊空白->半角空白, 不可視ゴミ消去)");
-            Console.WriteLine("  7. 記号ファミリー集約 (ハート絵文字・♥->外字黒ハート, ♡->外字白ハート, 三角->▲▼, ダイヤ->◆◇, 丸->●○, 星->★, 音符->♪)");
+            Console.WriteLine("  7. 記号ファミリー集約 (ハート絵文字・♥->外字黒ハート, ♡->外字白ハート, 三角->▲▼, ダイヤ->◆◇, 丸->●○, 星->★, 音符・♩♫♬->♪)");
             Console.WriteLine("  8. Windows禁止文字・パス区切りの安全な全角化 (/ -> ／, \\ -> ＼, : -> ： 等)");
-            Console.WriteLine("  9. Shift_JIS・MangaMeeya救出 (MangaMeeya対応のShift_JIS外字ハート[F0E6/F046]や安全記号は保護、未対応絵文字のみ単一「■」化)");
+            Console.WriteLine("  9. Shift_JIS (CP932) 厳密検証 (CP932外字ハート[F0E6/F046]を含む純粋なCP932文字のみ通過、CP932外の文字・絵文字はすべて単一「■」化)");
             Console.WriteLine();
             Console.WriteLine("外部対応表 (name2win.mapping.txt):");
             Console.WriteLine("  exeと同じ場所または実行フォルダーに対応表ファイルを置くことで、自由な置換が可能です。");
